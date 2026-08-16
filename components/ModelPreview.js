@@ -18,16 +18,13 @@ class ModelErrorBoundary extends Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="h-full flex flex-col items-center justify-center bg-gray-900 border border-white/10 rounded-3xl p-6 text-center">
-          <div className="w-12 h-12 mb-4 text-orange-400 opacity-50">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-          </div>
-          <h4 className="text-white text-[10px] font-black uppercase tracking-widest mb-2">Deploying Asset...</h4>
-          <p className="text-[9px] text-gray-500 font-medium leading-relaxed max-w-[150px]">
-            Success! The model is cloud-synced.<br />
-            Wait 1 min for static preview.
+        <div className="h-full flex flex-col items-center justify-center bg-[#f1efe8] border border-black/10 p-6 text-center">
+          <div className="w-12 h-12 mb-4 border border-black/20" />
+          <h4 className="text-[10px] font-medium uppercase tracking-[0.18em] text-black/75 mb-2">Preview unavailable</h4>
+          <p className="text-[10px] text-black/50 leading-relaxed max-w-[180px]">
+            The model could not be loaded.
+            <br />
+            The archive record is still available.
           </p>
         </div>
       );
@@ -88,10 +85,10 @@ const ModelPreview = memo(({
 
   return (
     <ModelErrorBoundary key={modelPath}>
-      <Canvas shadows camera={{ position: [0, 0, 4], fov: fov }} gl={{ preserveDrawingBuffer: true }}>
+      <Canvas shadows camera={{ position: [0, 0, 4], fov: fov }} gl={{ preserveDrawingBuffer: true, alpha: true }}>
         <ambientLight intensity={0.5} />
-        <spotLight position={[10, 10, 10]} angle={0.15} penumbra={1} castShadow />
-        <pointLight position={[-10, -10, -10]} intensity={intensity} />
+        <spotLight position={[10, 10, 10]} angle={0.18} penumbra={1} castShadow />
+        <pointLight position={[-10, -10, -10]} intensity={intensity * 0.85} />
 
         <Suspense fallback={null}>
           <Stage environment="city" intensity={0.6} contactShadow={{ opacity: 0.2, blur: 2 }} adjustCamera={adjustCamera}>

@@ -5,12 +5,10 @@ export default function handler(req, res) {
   try {
     // 将locationInfo转换为admin页面使用的格式
     const collections = locationInfo.map((item, index) => ({
-      id: index + 1,
-      name: item.name,
+      id: item.id ?? (index + 1),
+      ...item,
       description: item.description || '',
-      location: item.location,
       date: item.date || '',
-      modelPath: item.modelPath,
       scale: item.scale || 1,
       coordinates: item.coordinates || [35.6762, 139.6503],
       travelNote: item.travelNote || ''

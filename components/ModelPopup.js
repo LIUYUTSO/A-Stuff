@@ -1,18 +1,19 @@
-import { useRef, useState, useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
+import { FaTimes } from 'react-icons/fa';
 
 const ModelPreview = dynamic(() => import('./ModelPreview'), { ssr: false });
 
 export default function ModelPopup({ selectedLocation, isClosing, onClose }) {
   const popupRef = useRef(null);
 
-  // Close when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (popupRef.current && !popupRef.current.contains(event.target)) {
         onClose();
       }
     };
+
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [onClose]);
@@ -20,28 +21,18 @@ export default function ModelPopup({ selectedLocation, isClosing, onClose }) {
   if (!selectedLocation) return null;
 
   return (
-    <div className={`fixed inset-0 z-[1000] flex items-center justify-center p-4 md:p-8 sm:p-12 transition-opacity duration-700 ${isClosing ? 'opacity-0' : 'opacity-100'}`}>
-      {/* Backdrop with premium blur */}
-      <div
-        className={`absolute inset-0 bg-black/60 backdrop-blur-xl transition-all duration-1000 ${isClosing ? 'opacity-0 scale-110' : 'opacity-100 scale-100'}`}
-        onClick={onClose}
-      />
+    <div className={`va-popup-shell ${isClosing ? 'is-closing' : ''}`}>
+      <div className="va-popup-backdrop" onClick={onClose} />
 
-      {/* Premium Content Card */}
-      <div
-        ref={popupRef}
-        className={`relative w-full max-w-6xl h-[85vh] md:h-[80vh] bg-white rounded-[3.5rem] shadow-2xl overflow-hidden flex flex-col md:flex-row transition-all duration-700 ease-[cubic-bezier(0.23,1,0.32,1)] ${isClosing ? 'scale-90 translate-y-20 opacity-0 rotate-[-2deg]' : 'scale-100 translate-y-0 opacity-100'}`}
-      >
-        {/* Left Side: Immersive 3D Viewer */}
-        <div className="w-full md:w-3/5 h-[40vh] md:h-full bg-gray-50/50 relative group">
-          <div className="absolute top-10 left-10 z-10 flex flex-col gap-2">
-            <div className="bg-black text-white px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-[0.3em] shadow-2xl">3D ARTIFACT ENGINE</div>
-            <div className="bg-white/80 backdrop-blur-md px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-[0.2em] border border-white/50 text-gray-600 shadow-xl shadow-black/5">Scale: {selectedLocation.scale}x</div>
-          </div>
+      <div ref={popupRef} className="va-popup-panel" role="dialog" aria-modal="true">
+        <button className="va-popup-close" onClick={onClose} aria-label="Close record">
+          <FaTimes size={14} />
+        </button>
 
-          <div className="w-full h-full relative cursor-grab active:cursor-grabbing">
+        <div className="va-popup-media">
+          <div className="va-popup-stage">
             <ModelPreview
-              modelPath={selectedLocation.modelPath}
+              modelPath={selectedLocation.highModelPath || selectedLocation.modelPath}
               scale={1}
               intensity={selectedLocation.intensity || 1.5}
               rotationY={selectedLocation.rotationY || 0}
@@ -49,58 +40,213 @@ export default function ModelPopup({ selectedLocation, isClosing, onClose }) {
               adjustCamera={1.8}
             />
           </div>
-
-          {/* Visual Guide Element */}
-          <div className="absolute bottom-10 left-10 text-[9px] font-black uppercase tracking-widest text-gray-500 pointer-events-none opacity-60">Drag to rotate artifact 360°</div>
         </div>
 
-        {/* Right Side: Narrative & Details */}
-        <div className="w-full md:w-2/5 h-full bg-white flex flex-col border-l border-gray-50">
-          <div className="p-10 md:p-14 overflow-y-auto flex-1 scrollbar-hide">
-            <div className="mb-14">
-              <p className="text-[10px] font-black text-gray-500 uppercase tracking-[0.4em] mb-4">Discovery Record No.{selectedLocation.id || 'N/A'}</p>
-              <h3 className="text-4xl md:text-5xl font-black uppercase tracking-tightest leading-[0.9] italic mb-6 text-black">{selectedLocation.name}</h3>
-              <div className="flex flex-wrap gap-3">
-                <span className="bg-gray-50 border border-gray-100 px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest text-gray-700">{selectedLocation.location}</span>
-                <span className="bg-gray-50 border border-gray-100 px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest text-gray-700">{selectedLocation.date}</span>
-              </div>
-            </div>
-
-            <div className="space-y-10">
-              <div className="relative">
-                <div className="absolute -left-6 top-0 w-1 h-full bg-gray-200 rounded-full"></div>
-                <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-3">Public Manifest</h4>
-                <p className="text-gray-700 leading-relaxed font-semibold text-lg">
-                  {selectedLocation.description}
-                </p>
-              </div>
-
-              <div className="bg-gray-50/50 p-8 rounded-[2rem] border border-gray-100">
-                <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-4">Field Memoir</h4>
-                <p className="text-gray-600 text-sm leading-relaxed font-bold italic">
-                  {selectedLocation.travelNote || 'No restricted memoirs cataloged for this artifact.'}
-                </p>
-              </div>
-            </div>
+        <div className="va-popup-content">
+          <div className="va-popup-meta">
+            <span>{selectedLocation.location}</span>
+            <span>{selectedLocation.date}</span>
           </div>
 
-          {/* Close Action Bar */}
-          <div className="p-10 md:p-14 border-t border-gray-50 flex items-center justify-between">
-            <div className="flex flex-col">
-              <span className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Global Status</span>
-              <span className="text-xs font-bold text-green-600 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]"></span> Synchronized
-              </span>
-            </div>
-            <button
-              onClick={onClose}
-              className="bg-black text-white px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-gray-800 transition-all shadow-xl shadow-black/10 flex items-center gap-2"
-            >
-              Exit Archive
+          <h3>{selectedLocation.name}</h3>
+
+          <p className="va-popup-body">
+            {selectedLocation.travelNote || selectedLocation.description || 'No note recorded.'}
+          </p>
+
+          <div className="va-popup-footer">
+            <span className="va-popup-status">Minimal record</span>
+            <button className="va-popup-button" onClick={onClose}>
+              Close
             </button>
           </div>
         </div>
       </div>
+
+      <style jsx>{`
+        .va-popup-shell {
+          position: fixed;
+          inset: 0;
+          z-index: 1000;
+          display: grid;
+          place-items: center;
+          padding: 18px;
+        }
+
+        .va-popup-shell.is-closing {
+          pointer-events: none;
+        }
+
+        .va-popup-backdrop {
+          position: absolute;
+          inset: 0;
+          background: rgba(17, 17, 17, 0.58);
+          backdrop-filter: blur(14px);
+          -webkit-backdrop-filter: blur(14px);
+        }
+
+        .va-popup-panel {
+          position: relative;
+          width: min(1120px, 100%);
+          max-height: min(88vh, 920px);
+          overflow: hidden;
+          display: grid;
+          grid-template-columns: minmax(0, 1.1fr) minmax(300px, 0.9fr);
+          background: #f7f6f2;
+          border: 1px solid rgba(17, 17, 17, 0.1);
+          box-shadow: 0 24px 80px rgba(17, 17, 17, 0.18);
+          transition: transform 260ms ease, opacity 260ms ease;
+        }
+
+        .va-popup-shell.is-closing .va-popup-panel {
+          opacity: 0;
+          transform: scale(0.985) translateY(10px);
+        }
+
+        .va-popup-close {
+          position: absolute;
+          top: 16px;
+          right: 16px;
+          z-index: 3;
+          width: 36px;
+          height: 36px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          border: 1px solid rgba(17, 17, 17, 0.12);
+          background: rgba(247, 246, 242, 0.92);
+          color: #111111;
+          transition: border-color 180ms ease, transform 180ms ease;
+        }
+
+        .va-popup-close:hover {
+          border-color: rgba(17, 17, 17, 0.28);
+          transform: translateY(-1px);
+        }
+
+        .va-popup-media {
+          min-height: 0;
+          border-right: 1px solid rgba(17, 17, 17, 0.08);
+          background: #f1efe8;
+          padding: 24px;
+        }
+
+        .va-popup-stage {
+          width: 100%;
+          height: 100%;
+          min-height: 0;
+          border: 1px solid rgba(17, 17, 17, 0.08);
+          background: rgba(255, 255, 255, 0.24);
+        }
+
+        .va-popup-content {
+          display: flex;
+          flex-direction: column;
+          padding: 28px;
+        }
+
+        .va-popup-meta,
+        .va-popup-status {
+          text-transform: uppercase;
+          letter-spacing: 0.14em;
+          font-size: 10px;
+          font-family: "SFMono-Regular", ui-monospace, Menlo, Monaco, Consolas, monospace;
+        }
+
+        .va-popup-meta {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 12px;
+          color: rgba(17, 17, 17, 0.48);
+          margin-bottom: 16px;
+        }
+
+        .va-popup-meta span {
+          padding-right: 12px;
+          border-right: 1px solid rgba(17, 17, 17, 0.12);
+        }
+
+        .va-popup-meta span:last-child {
+          padding-right: 0;
+          border-right: 0;
+        }
+
+        .va-popup-content h3 {
+          margin: 0;
+          font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+          font-size: clamp(34px, 4.4vw, 64px);
+          line-height: 0.96;
+          letter-spacing: -0.05em;
+          font-weight: 400;
+          text-wrap: balance;
+        }
+
+        .va-popup-body {
+          margin: 22px 0 0;
+          max-width: 42ch;
+          color: rgba(17, 17, 17, 0.72);
+          font-size: 15px;
+          line-height: 1.95;
+          font-family: "SFMono-Regular", ui-monospace, Menlo, Monaco, Consolas, monospace;
+        }
+
+        .va-popup-footer {
+          margin-top: auto;
+          padding-top: 24px;
+          border-top: 1px solid rgba(17, 17, 17, 0.08);
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 18px;
+        }
+
+        .va-popup-status {
+          color: rgba(17, 17, 17, 0.5);
+        }
+
+        .va-popup-button {
+          min-height: 40px;
+          padding: 0 16px;
+          border: 1px solid rgba(17, 17, 17, 0.16);
+          background: #111111;
+          color: #f7f6f2;
+          transition: transform 180ms ease, border-color 180ms ease;
+        }
+
+        .va-popup-button:hover {
+          transform: translateY(-1px);
+          border-color: rgba(17, 17, 17, 0.3);
+        }
+
+        @media (max-width: 960px) {
+          .va-popup-panel {
+            grid-template-columns: 1fr;
+            max-height: 92vh;
+          }
+
+          .va-popup-media {
+            border-right: 0;
+            border-bottom: 1px solid rgba(17, 17, 17, 0.08);
+            min-height: 42vh;
+          }
+        }
+
+        @media (max-width: 640px) {
+          .va-popup-shell {
+            padding: 10px;
+          }
+
+          .va-popup-content,
+          .va-popup-media {
+            padding: 18px;
+          }
+
+          .va-popup-footer {
+            flex-direction: column;
+            align-items: flex-start;
+          }
+        }
+      `}</style>
     </div>
   );
 }
