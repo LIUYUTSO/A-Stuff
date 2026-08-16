@@ -75,7 +75,7 @@ export default async function handler(req, res) {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    message: message || 'CMS Update: Automatic push from Voyage artifacts',
+                    message: message || 'CMS Update: Automatic push from A-Stuff artifacts',
                     content: bodyContent,
                     sha: sha, // Include SHA if updating
                     branch: 'main',

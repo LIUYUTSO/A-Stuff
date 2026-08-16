@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Voyage 3D Model Compressor
+# A-Stuff 3D Model Compressor
 # Usage: ./scripts/compress.sh <filename.glb>
 
 FILE=$1

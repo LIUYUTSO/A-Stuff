@@ -566,7 +566,7 @@ export default function Admin() {
         <header className="va-admin-topbar">
           <div>
             <Link href="/" className="va-brand">
-              Voyage Artifacts
+              A-Stuff
             </Link>
             <div className="va-brand-sub">Admin / quiet workspace</div>
           </div>
