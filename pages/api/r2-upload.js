@@ -36,9 +36,14 @@ function makeS3Client() {
 }
 
 function publicUrlFor(key) {
-  const accountId = process.env.R2_ACCOUNT_ID;
-  const bucket = process.env.R2_BUCKET;
-  return `https://${accountId}.r2.cloudflarestorage.com/${bucket}/${encodeURIComponent(key)}`;
+  const base = process.env.R2_PUBLIC_BASE_URL;
+  if (!base) {
+    throw new Error('R2_PUBLIC_BASE_URL is not set; connect a custom domain to the R2 bucket and set it in env');
+  }
+  // key segments are already URL-safe (filenames), but keep each segment encoded
+  // individually so the `/` path separators survive.
+  const encodedKey = key.split('/').map(encodeURIComponent).join('/');
+  return `${base.replace(/\/$/, '')}/${encodedKey}`;
 }
 
 export default async function handler(req, res) {

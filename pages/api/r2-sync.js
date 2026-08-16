@@ -37,8 +37,10 @@ export default async function handler(req, res) {
 
     await s3.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: JSON.stringify(collections, null, 2), ContentType: 'application/json' }));
 
-    const accountId = process.env.R2_ACCOUNT_ID;
-    const publicUrl = `https://${accountId}.r2.cloudflarestorage.com/${bucket}/${encodeURIComponent(key)}`;
+    const base = process.env.R2_PUBLIC_BASE_URL;
+    const publicUrl = base
+      ? `${base.replace(/\/$/, '')}/${key.split('/').map(encodeURIComponent).join('/')}`
+      : null;
 
     return res.status(200).json({ success: true, url: publicUrl });
   } catch (error) {
