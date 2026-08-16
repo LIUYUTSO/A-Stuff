@@ -16,7 +16,7 @@ if [ ! -f "$FILE" ]; then
     exit 1
 fi
 
-echo "--- VOYAGE ASSET OPTIMIZER ---"
+echo "--- A-STUFF ASSET OPTIMIZER ---"
 echo "Target: $FILE"
 echo "Original size: $(du -h "$FILE" | cut -f1)"
 

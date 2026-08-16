@@ -1,0 +1,8 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^git add package-lock\\.json && git commit -m \"chore: update package-lock after installing deps\n\nCo-authored-by: Copilot <223556219\\+Copilot@users\\.noreply\\.github\\.com>\" && git push$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}

@@ -10,7 +10,7 @@ export default async function handler(req, res) {
       `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5`,
       {
         headers: {
-          'User-Agent': 'VA-app/1.0 (voyage-artifacts)',
+          'User-Agent': 'A-Stuff/1.0 (a-stuff)',
           'Accept-Language': 'en',
         },
       }

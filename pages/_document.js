@@ -10,24 +10,24 @@ export default function Document() {
 
         <meta
           name="description"
-          content="Voyage Artifacts is a quiet archive of travel objects, presented as an interactive map and minimal admin workspace."
+          content="A-Stuff is a quiet archive of personal objects, presented as an interactive map and minimal admin workspace."
         />
         <meta
           name="keywords"
-          content="voyage artifacts, travel archive, interactive map, 3D objects, passkey admin, quiet interface"
+          content="a-stuff personal archive, travel archive, interactive map, 3D objects, passkey admin, quiet interface"}
         />
 
-        <meta property="og:title" content="Voyage Artifacts" />
+        <meta property="og:title" content="A-Stuff" />
         <meta
           property="og:description"
           content="A quiet archive of travel objects, with a calm map-led public page and a matching admin workspace."
         />
         <meta property="og:type" content="website" />
-        <meta property="og:url" content="https://voyage-artifacts.vercel.app" />
+        <meta property="og:url" content="https://a-stuff.vercel.app" />
         <meta property="og:image" content="/og-image.jpg" />
 
         <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:title" content="Voyage Artifacts" />
+        <meta name="twitter:title" content="A-Stuff" />
         <meta
           name="twitter:description"
           content="A quiet archive of travel objects, presented as an interactive map and minimal admin workspace."

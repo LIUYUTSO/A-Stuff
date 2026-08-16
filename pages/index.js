@@ -74,7 +74,7 @@ export default function Home() {
     <>
       <Head>
         <link rel="icon" href="/favicon.ico" type="image/x-icon" />
-        <title>Voyage Artifacts</title>
+        <title>A-Stuff</title>
         <meta
           name="description"
           content="A quiet archive of travel objects, presented as a minimal editorial map and object plaza."
@@ -85,7 +85,7 @@ export default function Home() {
         <header className="va-topbar">
           <div>
             <Link href="/" className="va-brand">
-              Voyage Artifacts
+              A-Stuff
             </Link>
             <div className="va-brand-sub">Archive / {String(locationInfo.length).padStart(2, '0')} records</div>
           </div>
@@ -183,7 +183,7 @@ export default function Home() {
           <div className="va-footer-top">
             <div>
               <div className="va-footer-label">Archive</div>
-              <div className="va-footer-title">Voyage Artifacts</div>
+              <div className="va-footer-title">A-Stuff</div>
             </div>
 
             <div className="va-footer-meta">

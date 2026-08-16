@@ -11,15 +11,15 @@ import {
 
 const PASSKEY_STORE_PATH = path.join(process.cwd(), 'data', 'passkeys.json');
 const SESSION_COOKIE_NAME = 'auth_token';
-const REG_CHALLENGE_COOKIE_NAME = 'voyage_reg_challenge';
-const AUTH_CHALLENGE_COOKIE_NAME = 'voyage_auth_challenge';
+const REG_CHALLENGE_COOKIE_NAME = 'astuff_reg_challenge';
+const AUTH_CHALLENGE_COOKIE_NAME = 'astuff_auth_challenge';
 const SESSION_TTL_SECONDS = Number(process.env.ADMIN_SESSION_TTL_SECONDS || 60 * 60 * 12);
 
 const ADMIN_USERNAME = normalizeUsername(process.env.ADMIN_USERNAME || 'adam.liou');
 const ADMIN_DISPLAY_NAME = process.env.ADMIN_DISPLAY_NAME || 'Adam Liu';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 const SESSION_SECRET =
-  process.env.ADMIN_SESSION_SECRET || ADMIN_PASSWORD || 'voyage-artifacts-session-secret';
+  process.env.ADMIN_SESSION_SECRET || ADMIN_PASSWORD || 'a-stuff-session-secret';
 
 function normalizeUsername(username = '') {
   return String(username).trim().toLowerCase();
@@ -280,7 +280,7 @@ async function getPasskeyStatus(username = ADMIN_USERNAME) {
 
 function getRegistrationOptionsInput(req, username = ADMIN_USERNAME) {
   return {
-    rpName: 'Voyage Artifacts',
+    rpName: 'A-Stuff',
     rpID: getRpId(req),
     userName: normalizeUsername(username),
     userID: createUserId(username),
