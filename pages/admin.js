@@ -7,6 +7,7 @@ import {
   startAuthentication,
   startRegistration,
 } from '@simplewebauthn/browser';
+import { ADMIN_ENABLED } from '../utils/auth';
 import {
   FaArrowRight,
   FaCheckCircle,
@@ -55,7 +56,7 @@ function formatSnippet(text) {
   return text.length > 96 ? `${text.slice(0, 95)}…` : text;
 }
 
-export default function Admin() {
+function AdminPanel() {
   const uploadInputRef = useRef(null);
 
   const [isLoading, setIsLoading] = useState(true);
@@ -1729,3 +1730,31 @@ const adminStyles = `
     }
   }
 `;
+
+export async function getServerSideProps() {
+  return { props: { adminEnabled: ADMIN_ENABLED } };
+}
+
+export default function Admin({ adminEnabled }) {
+  if (!adminEnabled) {
+    return (
+      <main
+        style={{
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontFamily: 'system-ui, -apple-system, sans-serif',
+          color: '#3a352d',
+          background: '#f4efe8',
+          textAlign: 'center',
+          padding: '24px',
+        }}
+      >
+        <p>Admin is temporarily disabled.</p>
+      </main>
+    );
+  }
+
+  return <AdminPanel />;
+}

@@ -1,4 +1,5 @@
 import {
+  ADMIN_ENABLED,
   ADMIN_PASSWORD,
   ADMIN_USERNAME,
   SESSION_COOKIE_NAME,
@@ -9,6 +10,10 @@ import {
 } from '../../utils/auth';
 
 export default function handler(req, res) {
+  if (!ADMIN_ENABLED) {
+    return res.status(404).json({ error: 'Not found' });
+  }
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }

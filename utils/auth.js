@@ -15,6 +15,10 @@ const REG_CHALLENGE_COOKIE_NAME = 'astuff_reg_challenge';
 const AUTH_CHALLENGE_COOKIE_NAME = 'astuff_auth_challenge';
 const SESSION_TTL_SECONDS = Number(process.env.ADMIN_SESSION_TTL_SECONDS || 60 * 60 * 12);
 
+// Admin login (password + passkey) is disabled by default. Set ADMIN_ENABLED=true
+// in env to turn it back on for a given environment (dev or production).
+const ADMIN_ENABLED = String(process.env.ADMIN_ENABLED || '').toLowerCase() === 'true';
+
 const ADMIN_USERNAME = normalizeUsername(process.env.ADMIN_USERNAME || 'adam.liou');
 const ADMIN_DISPLAY_NAME = process.env.ADMIN_DISPLAY_NAME || 'Adam Liu';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
@@ -380,6 +384,7 @@ async function verifyAuthenticationForUser({ req, username, response, expectedCh
 
 export {
   ADMIN_DISPLAY_NAME,
+  ADMIN_ENABLED,
   ADMIN_PASSWORD,
   ADMIN_USERNAME,
   AUTH_CHALLENGE_COOKIE_NAME,

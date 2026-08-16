@@ -92,9 +92,6 @@ export default function Home() {
 
           <div className="va-topbar-right">
             <div className="va-topbar-note">Interactive map / object plaza</div>
-            <Link href="/admin" className="va-admin-link">
-              Admin
-            </Link>
           </div>
         </header>
 
