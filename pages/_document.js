@@ -14,7 +14,7 @@ export default function Document() {
         />
         <meta
           name="keywords"
-          content="a-stuff personal archive, travel archive, interactive map, 3D objects, passkey admin, quiet interface"}
+          content="a-stuff personal archive, travel archive, interactive map, 3D objects, passkey admin, quiet interface"
         />
 
         <meta property="og:title" content="A-Stuff" />
