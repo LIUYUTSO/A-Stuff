@@ -68,24 +68,123 @@ export default async function handler(req, res) {
       lowBuffer = highBuffer; // fallback to original if simplification fails
     }
 
-    // generate a simple PNG thumbnail as a placeholder (400x300 solid background)
-    const width = 400;
-    const height = 300;
-    const png = new PNG({ width, height });
-    // fill with a subtle color
-    const bgR = 236;
-    const bgG = 231;
-    const bgB = 219;
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const idx = (width * y + x) << 2;
-        png.data[idx] = bgR;
-        png.data[idx + 1] = bgG;
-        png.data[idx + 2] = bgB;
-        png.data[idx + 3] = 255;
+    // Attempt to render a real thumbnail by launching headless Chromium and rendering the low-poly model
+    let thumbBuffer;
+    try {
+      const puppeteer = await import('puppeteer');
+      const base64Low = lowBuffer.toString('base64');
+
+      const html = `<!doctype html>
+      <html>
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width,initial-scale=1" />
+        <style>body{margin:0;background:transparent;overflow:hidden}#c{width:800px;height:600px;display:block}</style>
+      </head>
+      <body>
+        <canvas id="c"></canvas>
+        <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+        <script src="https://unpkg.com/three@0.160.0/examples/js/loaders/GLTFLoader.js"></script>
+        <script>
+          (async () => {
+            try {
+              const canvas = document.getElementById('c');
+              const renderer = new THREE.WebGLRenderer({ canvas, preserveDrawingBuffer: true, alpha: true, antialias: true });
+              renderer.setSize(800, 600);
+              const scene = new THREE.Scene();
+              scene.background = new THREE.Color(0xf4efe8);
+
+              const camera = new THREE.PerspectiveCamera(35, 800/600, 0.1, 1000);
+
+              const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.9);
+              scene.add(hemi);
+              const dir = new THREE.DirectionalLight(0xffffff, 0.9);
+              dir.position.set(10, 10, 10);
+              scene.add(dir);
+
+              // construct a blob from the embedded base64
+              const base64 = '${base64Low}';
+              const byteCharacters = atob(base64);
+              const byteNumbers = new Array(byteCharacters.length);
+              for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+              }
+              const byteArray = new Uint8Array(byteNumbers);
+              const blob = new Blob([byteArray], { type: 'model/gltf-binary' });
+              const url = URL.createObjectURL(blob);
+
+              const loader = new THREE.GLTFLoader();
+              loader.load(url, (gltf) => {
+                const model = gltf.scene || gltf.scenes[0];
+                scene.add(model);
+
+                // compute bounding box to frame the camera
+                const box = new THREE.Box3().setFromObject(model);
+                const size = box.getSize(new THREE.Vector3());
+                const center = box.getCenter(new THREE.Vector3());
+
+                const maxDim = Math.max(size.x, size.y, size.z);
+                const fov = camera.fov * (Math.PI / 180);
+                const cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2)) * 1.6;
+
+                camera.position.set(center.x, center.y + maxDim*0.2, center.z + cameraZ);
+                camera.lookAt(center);
+
+                // subtle rotation for nicer thumbnail
+                model.rotation.y = 0.18;
+
+                // render and mark complete
+                renderer.render(scene, camera);
+                window.renderComplete = true;
+              }, undefined, (err) => {
+                console.error('GLTF load error', err);
+                window.renderComplete = true; // still finish to avoid hanging
+              });
+
+              // safety timeout in case loader hangs
+              setTimeout(() => { window.renderComplete = true; }, 8000);
+            } catch (e) {
+              console.error('Render error', e);
+              window.renderComplete = true;
+            }
+          })();
+        </script>
+      </body>
+      </html>`;
+
+      const browser = await puppeteer.launch({ args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+      const page = await browser.newPage();
+      await page.setViewport({ width: 800, height: 600 });
+      await page.setContent(html, { waitUntil: 'networkidle0' });
+      // wait for renderComplete flag
+      await page.waitForFunction('window.renderComplete === true', { timeout: 15000 }).catch(() => {});
+
+      const canvas = await page.$('#c');
+      if (canvas) {
+        const screenshot = await canvas.screenshot({ type: 'png' });
+        thumbBuffer = screenshot;
       }
+      await browser.close();
+    } catch (err) {
+      console.warn('Thumbnail render failed, falling back to placeholder:', err && err.message);
+      // fallback to simple png
+      const width = 400;
+      const height = 300;
+      const png = new PNG({ width, height });
+      const bgR = 236;
+      const bgG = 231;
+      const bgB = 219;
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const idx = (width * y + x) << 2;
+          png.data[idx] = bgR;
+          png.data[idx + 1] = bgG;
+          png.data[idx + 2] = bgB;
+          png.data[idx + 3] = 255;
+        }
+      }
+      thumbBuffer = PNG.sync.write(png);
     }
-    const thumbBuffer = PNG.sync.write(png);
 
     // upload to R2
     const s3 = makeS3Client();
