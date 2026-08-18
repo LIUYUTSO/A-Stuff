@@ -36,9 +36,21 @@ class ModelErrorBoundary extends Component {
 // Global cache object
 const modelCache = {};
 
+// External CDN models are served without CORS headers, so a direct
+// cross-origin fetch from three.js fails ("Failed to fetch"). Route absolute
+// http(s) URLs through our same-origin proxy; leave blob:/data:/relative URLs
+// (e.g. local admin previews) untouched.
+const resolveModelUrl = (path) => {
+  if (!path || typeof path !== 'string') return path;
+  if (/^https?:\/\//i.test(path)) {
+    return `/api/model-proxy?url=${encodeURIComponent(path)}`;
+  }
+  return path;
+};
+
 // Optimized loaded component
 const Model = ({ modelPath, scale, rotationY, position }) => {
-  const { scene } = useGLTF(modelPath);
+  const { scene } = useGLTF(resolveModelUrl(modelPath));
   const meshRef = useRef();
 
   const modelScene = useMemo(() => {
@@ -66,7 +78,7 @@ export const preloadModels = (modelPaths) => {
   modelPaths.forEach(path => {
     if (!modelCache[path]) {
       try {
-        useGLTF.preload(path);
+        useGLTF.preload(resolveModelUrl(path));
         modelCache[path] = true;
       } catch (e) { }
     }
