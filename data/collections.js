@@ -46,5 +46,29 @@ export const locationInfo = [
       120.9605
     ],
     "travelNote": "An impressive artistic creation by Cody, showcasing unique visual aesthetics and creative expression. This remarkable artwork represents a fusion of traditional and contemporary elements."
+  },
+  {
+    "name": "Heavenly Bodies",
+    "location": "Calgary",
+    "date": "2026-08",
+    "modelPath": "https://cdn.adamliu.uk/models/low/4c670336-heavenlybodies.glb",
+    "highModelPath": "https://cdn.adamliu.uk/models/high/4c670336-heavenlybodies.glb",
+    "thumbnail": "https://cdn.adamliu.uk/thumbnails/4c670336-heavenlybodies.png",
+    "scale": 1,
+    "intensity": 1.5,
+    "rotationY": 0,
+    "autoRotateSpeed": 0,
+    "originOffset": [
+      0,
+      0.2,
+      0
+    ],
+    "cameraDistance": 1.8,
+    "coordinates": [
+      51.063119,
+      -114.059638
+    ],
+    "travelNote": "Wrestling weightless cosmonaut limbs through zero-G pain,\n\nI fixed the space station, but I’ll never feel my thumbs again.",
+    "id": 1786989272212
   }
 ];
