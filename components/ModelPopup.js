@@ -33,11 +33,12 @@ export default function ModelPopup({ selectedLocation, isClosing, onClose }) {
           <div className="va-popup-stage">
             <ModelPreview
               modelPath={selectedLocation.highModelPath || selectedLocation.modelPath}
-              scale={1}
+              scale={selectedLocation.scale || 1}
               intensity={selectedLocation.intensity || 1.5}
               rotationY={selectedLocation.rotationY || 0}
               autoRotateSpeed={selectedLocation.autoRotateSpeed || 2}
-              adjustCamera={1.8}
+              cameraDistance={selectedLocation.cameraDistance || 1.8}
+              position={selectedLocation.originOffset || [0, 0, 0]}
             />
           </div>
         </div>
@@ -51,7 +52,7 @@ export default function ModelPopup({ selectedLocation, isClosing, onClose }) {
           <h3>{selectedLocation.name}</h3>
 
           <p className="va-popup-body">
-            {selectedLocation.travelNote || selectedLocation.description || 'No note recorded.'}
+            {selectedLocation.travelNote || 'No note recorded.'}
           </p>
 
           <div className="va-popup-footer">

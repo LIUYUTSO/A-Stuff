@@ -15,9 +15,18 @@ const REG_CHALLENGE_COOKIE_NAME = 'astuff_reg_challenge';
 const AUTH_CHALLENGE_COOKIE_NAME = 'astuff_auth_challenge';
 const SESSION_TTL_SECONDS = Number(process.env.ADMIN_SESSION_TTL_SECONDS || 60 * 60 * 12);
 
-// Admin login (password + passkey) is disabled by default. Set ADMIN_ENABLED=true
-// in env to turn it back on for a given environment (dev or production).
-const ADMIN_ENABLED = String(process.env.ADMIN_ENABLED || '').toLowerCase() === 'true';
+// `next dev` sets NODE_ENV=development; every deployed build (Vercel preview
+// or production) runs `next build`/`next start` with NODE_ENV=production.
+// So this is true only for a real local dev server, never for anything
+// deployed on Vercel.
+const IS_DEV = process.env.NODE_ENV !== 'production';
+
+// Admin login (password + passkey) is disabled by default so preview/production
+// don't expose it. Local dev always has it enabled (and skips login entirely,
+// see isAuthorized below) so you can test the admin/R2 flow without juggling
+// passkeys across origins. Set ADMIN_ENABLED=true in env to turn the real
+// login flow back on for a deployed environment.
+const ADMIN_ENABLED = IS_DEV || String(process.env.ADMIN_ENABLED || '').toLowerCase() === 'true';
 
 const ADMIN_USERNAME = normalizeUsername(process.env.ADMIN_USERNAME || 'adam.liou');
 const ADMIN_DISPLAY_NAME = process.env.ADMIN_DISPLAY_NAME || 'Adam Liu';
@@ -156,6 +165,8 @@ function getSessionFromRequest(req) {
 }
 
 function isAuthorized(req) {
+  if (IS_DEV) return true;
+
   const session = getSessionFromRequest(req);
   if (session && normalizeUsername(session.username) === ADMIN_USERNAME) return true;
 
@@ -387,6 +398,7 @@ export {
   ADMIN_ENABLED,
   ADMIN_PASSWORD,
   ADMIN_USERNAME,
+  IS_DEV,
   AUTH_CHALLENGE_COOKIE_NAME,
   REG_CHALLENGE_COOKIE_NAME,
   SESSION_COOKIE_NAME,

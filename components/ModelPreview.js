@@ -37,7 +37,7 @@ class ModelErrorBoundary extends Component {
 const modelCache = {};
 
 // Optimized loaded component
-const Model = ({ modelPath, scale, rotationY }) => {
+const Model = ({ modelPath, scale, rotationY, position }) => {
   const { scene } = useGLTF(modelPath);
   const meshRef = useRef();
 
@@ -56,6 +56,7 @@ const Model = ({ modelPath, scale, rotationY }) => {
       ref={meshRef}
       object={modelScene}
       scale={scale}
+      position={position}
     />
   );
 };
@@ -79,7 +80,12 @@ const ModelPreview = memo(({
   rotationY = 0,
   autoRotateSpeed = 2,
   fov = 45,
-  adjustCamera = true
+  adjustCamera = true,
+  cameraDistance,
+  // Geometric-origin correction: some exported GLBs don't have their pivot
+  // at the visual center, which flings them out of frame once autoRotate is
+  // on. This nudges the mesh back into place without touching the source file.
+  position = [0, 0, 0],
 }) => {
   if (!modelPath) return null;
 
@@ -91,7 +97,12 @@ const ModelPreview = memo(({
         <pointLight position={[-10, -10, -10]} intensity={intensity * 0.85} />
 
         <Suspense fallback={null}>
-          <Stage environment="city" intensity={0.6} contactShadow={{ opacity: 0.2, blur: 2 }} adjustCamera={adjustCamera}>
+          <Stage
+            environment="city"
+            intensity={0.6}
+            contactShadow={{ opacity: 0.2, blur: 2 }}
+            adjustCamera={cameraDistance ?? adjustCamera}
+          >
             <PresentationControls
               global
               config={{ mass: 2, tension: 500 }}
@@ -104,6 +115,7 @@ const ModelPreview = memo(({
                 modelPath={modelPath}
                 scale={scale}
                 rotationY={rotationY}
+                position={position}
               />
             </PresentationControls>
           </Stage>

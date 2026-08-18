@@ -12,6 +12,7 @@ import {
   FaArrowRight,
   FaCheckCircle,
   FaCloudUploadAlt,
+  FaExclamationTriangle,
   FaKey,
   FaLock,
   FaPen,
@@ -25,29 +26,61 @@ const ModelPreview = dynamic(() => import('../components/ModelPreview'), {
   loading: () => <div className="va-preview-loading" aria-hidden="true" />,
 });
 
+// Two layers of "the data": `data/collections.js` (committed, what the
+// public site actually ships) and whatever's sitting in the admin form that
+// hasn't been published via "Sync to Cloud" yet. That second layer used to
+// live only in React state — a refresh silently dropped it back to the
+// committed file with no warning. Mirroring it into localStorage means a
+// refresh restores the in-progress draft instead of losing it; it's cleared
+// the moment a sync actually lands the data in the committed file.
+const DRAFT_STORAGE_KEY = 'va-admin-collections-draft';
+
 const initialDraft = {
   name: '',
-  description: '',
   location: '',
   date: '',
   modelPath: '',
+  highModelPath: '',
+  thumbnail: '',
   scale: 1,
   intensity: 1.5,
   rotationY: 0,
   autoRotateSpeed: 2,
+  // Geometric-origin correction (position offset) + camera framing distance —
+  // tune a model's initial framing here instead of re-exporting from Blender.
+  originOffset: [0, 0, 0],
+  cameraDistance: 1.8,
   coordinates: [35.6762, 139.6503],
   travelNote: '',
 };
+
+const WIZARD_STEPS = ['Model', 'Details', 'Note'];
+
+// The viewer/tuning knobs, isolated from the rest of initialDraft — reused
+// both by the "+ Back to origin" reset and by handleChooseFile (a new model
+// file means the previous model's framing no longer applies).
+function tuningDefaults() {
+  return {
+    intensity: initialDraft.intensity,
+    rotationY: initialDraft.rotationY,
+    autoRotateSpeed: initialDraft.autoRotateSpeed,
+    scale: initialDraft.scale,
+    cameraDistance: initialDraft.cameraDistance,
+    originOffset: [...initialDraft.originOffset],
+  };
+}
 
 function normalizeDraft(item) {
   return {
     ...initialDraft,
     ...item,
     coordinates: Array.isArray(item?.coordinates) ? item.coordinates : initialDraft.coordinates,
+    originOffset: Array.isArray(item?.originOffset) ? item.originOffset : initialDraft.originOffset,
     scale: Number(item?.scale ?? 1),
     intensity: Number(item?.intensity ?? 1.5),
     rotationY: Number(item?.rotationY ?? 0),
     autoRotateSpeed: Number(item?.autoRotateSpeed ?? 2),
+    cameraDistance: Number(item?.cameraDistance ?? 1.8),
   };
 }
 
@@ -58,6 +91,17 @@ function formatSnippet(text) {
 
 function AdminPanel() {
   const uploadInputRef = useRef(null);
+  // The raw File for a not-yet-uploaded model. Preview is instant (a local
+  // blob: URL, no network); the actual R2 upload happens once at the end of
+  // the wizard, in handleSubmit.
+  const pendingFileRef = useRef(null);
+  const previewObjectUrlRef = useRef(null);
+  const previewFrameRef = useRef(null);
+  // Captured when leaving step 0 (see handleAdvanceFromModelStep) — the
+  // preview canvas only exists in the DOM while wizardStep is 0, so trying
+  // to read it again at final-submit time (step 2) finds nothing and the
+  // thumbnail silently falls back to a blank placeholder.
+  const thumbnailDataRef = useRef(undefined);
 
   const [isLoading, setIsLoading] = useState(true);
   const [authorized, setAuthorized] = useState(false);
@@ -80,6 +124,11 @@ function AdminPanel() {
   const [draft, setDraft] = useState(initialDraft);
   const [editMode, setEditMode] = useState(false);
   const [editId, setEditId] = useState(null);
+  const [wizardStep, setWizardStep] = useState(0);
+  // 'idle' | 'uploading' | 'success' | 'error' — drives the full-screen lock
+  // overlay during the final "Upload to R2 & save" step.
+  const [uploadPhase, setUploadPhase] = useState('idle');
+  const [uploadError, setUploadError] = useState('');
   const [isSyncing, setIsSyncing] = useState(false);
   const [locationSearch, setLocationSearch] = useState('');
   const [searchResults, setSearchResults] = useState([]);
@@ -113,7 +162,20 @@ function AdminPanel() {
 
         if (!alive) return;
 
-        setCollections(locationInfo || []);
+        let restoredDraft = null;
+        try {
+          const stored = window.localStorage.getItem(DRAFT_STORAGE_KEY);
+          if (stored) restoredDraft = JSON.parse(stored);
+        } catch {
+          restoredDraft = null;
+        }
+
+        if (Array.isArray(restoredDraft)) {
+          setCollections(restoredDraft);
+          setNotice('Restored unsynced changes from this browser — click "Sync to Cloud" to publish them.');
+        } else {
+          setCollections(locationInfo || []);
+        }
 
         const modelsJson = await modelsRes.json();
         setAvailableModels(modelsJson.models || []);
@@ -154,6 +216,21 @@ function AdminPanel() {
     };
   }, []);
 
+  // Mirror `collections` into localStorage as they change so an unsynced
+  // add/edit/delete survives a refresh (see DRAFT_STORAGE_KEY comment above).
+  // Skipped while still loading so the initial empty state doesn't stomp a
+  // draft we haven't restored yet.
+  useEffect(() => {
+    if (isLoading) return;
+    try {
+      window.localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(collections));
+    } catch {
+      // localStorage unavailable (private browsing, quota, etc.) — the
+      // in-memory state still works for the current session, it just won't
+      // survive a refresh.
+    }
+  }, [collections, isLoading]);
+
   useEffect(() => {
     if (authorized || !username) return undefined;
 
@@ -163,6 +240,26 @@ function AdminPanel() {
 
     return () => clearTimeout(timer);
   }, [authorized, refreshPasskeyStatus, username]);
+
+  // `.va-reveal` elements are opacity:0 until `.va-in` is added — this used to
+  // never happen, so the whole login form / dashboard body stayed invisible.
+  // Fade everything in once the relevant screen has actually mounted.
+  useEffect(() => {
+    if (isLoading) return undefined;
+
+    const frame = requestAnimationFrame(() => {
+      document.querySelectorAll('.va-reveal:not(.va-in)').forEach((el) => {
+        el.classList.add('va-in');
+      });
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [isLoading, authorized, collections, availableModels]);
+
+  // (Used to GSAP-animate this open/closed. Animating the height of a box
+  // that has a live Three.js canvas inside it fights the canvas's own
+  // resize handling — it corrupted the whole page in practice. Not worth
+  // it; just show/hide instantly.)
 
   useEffect(() => {
     const timer = setTimeout(async () => {
@@ -323,25 +420,133 @@ function AdminPanel() {
     setSearchResults([]);
   }, []);
 
+  const revokePendingPreview = () => {
+    if (previewObjectUrlRef.current) {
+      URL.revokeObjectURL(previewObjectUrlRef.current);
+      previewObjectUrlRef.current = null;
+    }
+    pendingFileRef.current = null;
+    thumbnailDataRef.current = undefined;
+  };
+
   const clearDraft = useCallback(() => {
+    revokePendingPreview();
     setDraft(initialDraft);
     setEditMode(false);
     setEditId(null);
+    setWizardStep(0);
+    setUploadPhase('idle');
+    setUploadError('');
     setLocationSearch('');
     setSearchResults([]);
   }, []);
 
   const handleSubmit = useCallback(
-    (event) => {
+    async (event) => {
       event.preventDefault();
+
+      let recordDraft = draft;
+
+      // A freshly-chosen file is still local (blob: URL) at this point —
+      // this is the moment it actually goes to R2, low-poly + thumbnail
+      // generation included.
+      if (pendingFileRef.current) {
+        const file = pendingFileRef.current;
+        setUploadPhase('uploading');
+        setUploadError('');
+        try {
+          // Captured back when you left step 0 (handleAdvanceFromModelStep)
+          // — the preview canvas only exists in the DOM on step 0, so
+          // there's nothing left to read from previewFrameRef by the time
+          // we get here on step 2.
+          const thumbnailData = thumbnailDataRef.current;
+
+          // Step 1: get a signed URL and PUT the raw file straight to R2.
+          // Vercel Functions cap request bodies at 4.5MB (platform-level —
+          // no config can raise it), well under a real high-poly .glb, so
+          // the file never goes through our own API at all.
+          const urlRes = await fetch('/api/r2-upload-url', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filename: file.name, contentType: file.type || 'model/gltf-binary' }),
+          });
+          const urlData = await urlRes.json();
+          if (!urlRes.ok) throw new Error(urlData.error || 'Could not start upload');
+
+          // Large files (60MB+ high-poly .glb) over a real network hit
+          // transient drops — Safari specifically will throw "the network
+          // connection was lost" mid-transfer sometimes. Retry a couple
+          // times with a short backoff before giving up; the presigned URL
+          // is good for 15 minutes (see r2-upload-url.js), plenty of room.
+          let putRes;
+          let putError;
+          for (let attempt = 1; attempt <= 3; attempt += 1) {
+            try {
+              putRes = await fetch(urlData.uploadUrl, {
+                method: 'PUT',
+                headers: { 'Content-Type': file.type || 'model/gltf-binary' },
+                body: file,
+              });
+              putError = undefined;
+              break;
+            } catch (err) {
+              putError = err;
+              if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, attempt * 1500));
+            }
+          }
+          if (putError) throw new Error(`Upload to R2 failed: ${putError.message} (retried 3x)`);
+          if (!putRes.ok) throw new Error(`Upload to R2 failed (${putRes.status})`);
+
+          // Step 2: tell the server to pull it back down, generate the
+          // low-poly + store the thumbnail. Only the R2 key + a small PNG
+          // travel through this request — comfortably under the 4.5MB cap.
+          const processRes = await fetch('/api/r2-process', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key: urlData.key, thumbnail: thumbnailData }),
+          });
+
+          const data = await processRes.json();
+          if (!processRes.ok) {
+            throw new Error(`${data.message || data.error || 'Processing failed'} (${processRes.status})`);
+          }
+
+          const urls = data.urls || {};
+          recordDraft = {
+            ...draft,
+            modelPath: urls.low || draft.modelPath,
+            highModelPath: urls.high || '',
+            thumbnail: urls.thumbnail || '',
+          };
+          setDraft(recordDraft);
+          if (urls.low) {
+            setAvailableModels((current) => (current.includes(urls.low) ? current : [...current, urls.low]));
+          }
+          revokePendingPreview();
+
+          // Brief success beat so the lock screen doesn't just vanish —
+          // then fall through to save the record below.
+          setUploadPhase('success');
+          await new Promise((resolve) => setTimeout(resolve, 600));
+        } catch (error) {
+          // Deliberately don't clear the draft or the pending file here —
+          // everything typed so far (name/date/location/note) and the
+          // chosen model stay put so nothing has to be retyped. The lock
+          // screen shows the error and waits for you to dismiss it.
+          setUploadError(error.message || 'Model upload failed — record was not saved.');
+          setUploadPhase('error');
+          return;
+        }
+        setUploadPhase('idle');
+      }
 
       if (editMode) {
         setCollections((current) =>
-          current.map((item) => (item.id === editId ? { ...draft, id: editId } : item))
+          current.map((item) => (item.id === editId ? { ...recordDraft, id: editId } : item))
         );
         setNotice('Record updated locally.');
       } else {
-        setCollections((current) => [...current, { ...draft, id: Date.now() }]);
+        setCollections((current) => [...current, { ...recordDraft, id: Date.now() }]);
         setNotice('Record added locally.');
       }
 
@@ -351,9 +556,11 @@ function AdminPanel() {
   );
 
   const handleEdit = useCallback((item) => {
+    revokePendingPreview();
     setEditMode(true);
     setEditId(item.id);
     setDraft(normalizeDraft(item));
+    setWizardStep(0);
     setLocationSearch(item.location || '');
     setNotice(`Editing ${item.name}.`);
   }, []);
@@ -364,62 +571,57 @@ function AdminPanel() {
     setNotice('Record removed locally.');
   }, []);
 
-  const handleFileUpload = useCallback(async (event) => {
+  // Fast, local, no network: just points the preview at a blob: URL so you
+  // can frame the model immediately. The real upload happens once, at the
+  // end of the wizard (see handleSubmit).
+  const handleChooseFile = useCallback((event) => {
     const file = event.target.files?.[0];
+    event.target.value = '';
     if (!file) return;
 
-    if (file.size > 50 * 1024 * 1024) {
-      setNotice(`File too large: ${(file.size / 1024 / 1024).toFixed(1)}MB`);
-      return;
-    }
+    // No client-side size cap: upload now goes straight to R2 (see
+    // handleSubmit), not through a Vercel Function, so there's no 4.5MB
+    // platform ceiling to protect against here — and WebGL has been
+    // confirmed fine rendering full high-poly (60MB+) source files.
 
-    if (!window.confirm(`Upload ${file.name} to the cloud?`)) return;
+    revokePendingPreview();
+    const objectUrl = URL.createObjectURL(file);
+    previewObjectUrlRef.current = objectUrl;
+    pendingFileRef.current = file;
 
-    const readFileAsBase64 = () =>
-      new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const result = reader.result;
-          const base64 = result.split(',')[1];
-          if (!base64) {
-            reject(new Error('Could not read file content.'));
-            return;
-          }
-          resolve(base64);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
+    // A new file means the old tuning values (framed for a different model)
+    // don't apply anymore — reset brightness/angle/spin/scale/camera/origin
+    // back to defaults along with it.
+    setDraft((current) => ({
+      ...current,
+      ...tuningDefaults(),
+      modelPath: objectUrl,
+      highModelPath: '',
+      thumbnail: '',
+    }));
+    setNotice(`Previewing ${file.name} — not uploaded yet.`);
+  }, []);
 
-    setIsSyncing(true);
+  // Resets the *tuning* fields back to their defaults — brightness, angle,
+  // spin, scale, camera distance, origin offset. Does NOT touch modelPath or
+  // anything from later steps (name/date/location/note): this is "put the
+  // knobs back where they started," not "forget the model was chosen."
+  const resetToOrigin = useCallback(() => {
+    setDraft((current) => ({ ...current, ...tuningDefaults() }));
+  }, []);
+
+  // The preview canvas is only mounted while wizardStep is 0, so this is the
+  // last moment it's possible to grab a snapshot of it — capture now and
+  // hang onto it in a ref for handleSubmit to use later, once the canvas is
+  // long gone from the DOM.
+  const handleAdvanceFromModelStep = useCallback(() => {
+    const canvas = previewFrameRef.current?.querySelector('canvas');
     try {
-      const base64Content = await readFileAsBase64();
-      const pushRes = await fetch('/api/r2-upload', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          content: base64Content,
-          filename: file.name,
-        }),
-      });
-
-      const data = await pushRes.json();
-      if (!pushRes.ok) throw new Error(data.message || data.error || 'Upload failed');
-
-      const urls = data.urls || {};
-      const low = urls.low || `/models/${file.name}`;
-      const high = urls.high || `/models/${file.name}`;
-      const thumbnail = urls.thumbnail || '';
-
-      setAvailableModels((current) => (current.includes(low) ? current : [...current, low]));
-      setDraft((current) => ({ ...current, modelPath: low, highModelPath: high, thumbnail }));
-      setNotice('Model uploaded.');
-    } catch (error) {
-      setNotice(error.message || 'Upload failed.');
-    } finally {
-      setIsSyncing(false);
-      event.target.value = '';
+      thumbnailDataRef.current = canvas?.toDataURL('image/png').split(',')[1];
+    } catch {
+      thumbnailDataRef.current = undefined; // tainted canvas — submit falls back to a placeholder
     }
+    setWizardStep(1);
   }, []);
 
   const syncCollectionsToCloud = useCallback(async () => {
@@ -429,16 +631,34 @@ function AdminPanel() {
     setNotice('');
 
     try {
-      const res = await fetch('/api/r2-sync', {
+      // The public site statically imports data/collections.js at build time
+      // (see pages/index.js), so "publish" means committing a fresh copy of
+      // that file to GitHub — Vercel picks up the push and redeploys.
+      const fileBody = `export const locationInfo = ${JSON.stringify(collections, null, 2)};\n`;
+
+      const res = await fetch('/api/github-sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(collections),
+        body: JSON.stringify({
+          content: fileBody,
+          path: 'data/collections.js',
+          message: 'CMS Update: sync archive manifest',
+          isBinary: false,
+        }),
       });
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Sync failed');
 
-      setNotice('Archive manifest synchronized.');
+      // The committed file is now the source of truth again — drop the
+      // local draft so the next load doesn't shadow it with stale state.
+      try {
+        window.localStorage.removeItem(DRAFT_STORAGE_KEY);
+      } catch {
+        // ignore
+      }
+
+      setNotice('Archive manifest published — Vercel will redeploy shortly.');
     } catch (error) {
       setNotice(error.message || 'Sync failed.');
     } finally {
@@ -563,6 +783,37 @@ function AdminPanel() {
 
   return (
     <div className="va-admin-page">
+      {uploadPhase !== 'idle' && (
+        <div className="va-lock-screen" role="alertdialog" aria-live="assertive">
+          <div className="va-lock-card">
+            {uploadPhase === 'uploading' && (
+              <>
+                <FaSpinner className="va-spin va-lock-icon" />
+                <p className="va-lock-title">Uploading to R2…</p>
+                <p className="va-lock-body">Sending the model, compressing a low-poly copy, saving the thumbnail.</p>
+              </>
+            )}
+            {uploadPhase === 'success' && (
+              <>
+                <FaCheckCircle className="va-lock-icon va-lock-icon-ok" />
+                <p className="va-lock-title">Saved.</p>
+              </>
+            )}
+            {uploadPhase === 'error' && (
+              <>
+                <FaExclamationTriangle className="va-lock-icon va-lock-icon-err" />
+                <p className="va-lock-title">Upload failed</p>
+                <p className="va-lock-body">{uploadError}</p>
+                <p className="va-lock-body va-lock-reassure">Nothing was lost — the form is exactly as you left it.</p>
+                <button type="button" className="va-button-secondary" onClick={() => setUploadPhase('idle')}>
+                  Dismiss
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       <main className="va-admin-shell">
         <header className="va-admin-topbar">
           <div>
@@ -608,222 +859,321 @@ function AdminPanel() {
                 <div className="va-section-label">{editMode ? 'Edit record' : 'New record'}</div>
                 <h2 className="va-panel-title">{editMode ? 'Refine the archive entry' : 'Add a quiet object'}</h2>
               </div>
-              <div className="va-preview-frame">
-                {draft.modelPath ? (
-                  <ModelPreview
-                    modelPath={draft.modelPath}
-                    scale={1}
-                    intensity={draft.intensity}
-                    rotationY={draft.rotationY}
-                    autoRotateSpeed={draft.autoRotateSpeed}
-                    adjustCamera={1.8}
-                    fov={50}
-                  />
-                ) : (
-                  <div className="va-preview-placeholder">
-                    <div className="va-preview-glyph" />
-                    <span>Awaiting model</span>
-                  </div>
-                )}
-              </div>
+            </div>
+
+            <div className="va-wizard-steps">
+              {WIZARD_STEPS.map((label, index) => (
+                <div key={label} className={`va-wizard-step ${index === wizardStep ? 'is-active' : ''} ${index < wizardStep ? 'is-done' : ''}`}>
+                  <span>{String(index + 1).padStart(2, '0')}</span>
+                  <span>{label}</span>
+                </div>
+              ))}
             </div>
 
             <form onSubmit={handleSubmit} className="va-form">
-              <div className="va-grid-two">
-                <label className="va-field">
-                  <span>Name</span>
-                  <input
-                    type="text"
-                    value={draft.name}
-                    onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
-                    placeholder="Artifact name"
-                    required
-                  />
-                </label>
+              {wizardStep === 0 && (
+                <>
+                  <div className="va-upload-shell">
+                    <span>Model file</span>
+                    <button
+                      type="button"
+                      className="va-upload-button"
+                      onClick={() => uploadInputRef.current?.click()}
+                    >
+                      <FaCloudUploadAlt />
+                      <span>{draft.modelPath ? 'Choose a different file' : 'Choose model file'}</span>
+                    </button>
+                    <input
+                      ref={uploadInputRef}
+                      type="file"
+                      accept=".glb,.gltf"
+                      onChange={handleChooseFile}
+                      className="va-hidden-file"
+                    />
+                    <p className="va-input-note">
+                      {pendingFileRef.current
+                        ? 'Rendered locally — not uploaded until you finish this record.'
+                        : editMode
+                          ? 'Editing an already-published model.'
+                          : 'Pick a .glb/.gltf file to preview it instantly in the browser.'}
+                    </p>
+                  </div>
 
-                <label className="va-field">
-                  <span>Date</span>
-                  <input
-                    type="text"
-                    value={draft.date}
-                    onChange={(event) => setDraft((current) => ({ ...current, date: event.target.value }))}
-                    placeholder="YYYY-MM"
-                    required
-                  />
-                </label>
+                  <div className="va-model-reveal">
+                    {draft.modelPath && (
+                      <>
+                        {/* Render layer (the 3D canvas) and controls layer are deliberately
+                            separate containers — a control never gets nested inside the
+                            background/media element it sits on top of. See
+                            A-Brain/A-Sponge/signals/2026-08-17-overlay-controls-layer.md */}
+                        <div className="va-preview-stage">
+                          <div className="va-preview-frame" ref={previewFrameRef}>
+                            <ModelPreview
+                              modelPath={draft.modelPath}
+                              scale={draft.scale}
+                              intensity={draft.intensity}
+                              rotationY={draft.rotationY}
+                              autoRotateSpeed={draft.autoRotateSpeed}
+                              cameraDistance={draft.cameraDistance}
+                              position={draft.originOffset}
+                              fov={50}
+                            />
+                          </div>
+                          <div className="va-preview-controls">
+                            <button
+                              type="button"
+                              className="va-origin-reset"
+                              onClick={resetToOrigin}
+                              title="Origin offset — nudges an off-center model back into frame instead of re-exporting it."
+                            >
+                              + Back to origin
+                            </button>
+                          </div>
+                        </div>
 
-                <label className="va-field va-field-wide">
-                  <span>Location</span>
-                  <input
-                    type="text"
-                    value={locationSearch}
-                    onChange={(event) => setLocationSearch(event.target.value)}
-                    placeholder="Search city, country"
-                    autoComplete="off"
-                    required
-                  />
-                  {searchResults.length > 0 && (
-                    <div className="va-search-popover">
-                      {searchResults.map((result) => (
-                        <button
-                          key={result.id}
-                          type="button"
-                          className="va-search-item"
-                          onClick={() => handleSelectLocation(result)}
-                        >
-                          <span>{result.name}</span>
-                          <small>Use coordinates</small>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  {searchBusy && <div className="va-input-note">Searching locations…</div>}
-                </label>
+                        <div className="va-slider-grid">
+                          <label className="va-slider">
+                            <span>Brightness</span>
+                            <strong>{Number(draft.intensity).toFixed(1)}x</strong>
+                            <input
+                              type="range"
+                              min="0.5"
+                              max="4"
+                              step="0.1"
+                              value={draft.intensity}
+                              onChange={(event) =>
+                                setDraft((current) => ({ ...current, intensity: Number(event.target.value) }))
+                              }
+                            />
+                          </label>
 
-                <label className="va-field">
-                  <span>Latitude</span>
-                  <input
-                    type="number"
-                    step="0.0001"
-                    value={draft.coordinates[0]}
-                    onChange={(event) =>
-                      setDraft((current) => ({
-                        ...current,
-                        coordinates: [Number(event.target.value), current.coordinates[1]],
-                      }))
-                    }
-                  />
-                </label>
+                          <label className="va-slider">
+                            <span>Initial angle</span>
+                            <strong>{draft.rotationY}°</strong>
+                            <input
+                              type="range"
+                              min="0"
+                              max="360"
+                              step="1"
+                              value={draft.rotationY}
+                              onChange={(event) =>
+                                setDraft((current) => ({ ...current, rotationY: Number(event.target.value) }))
+                              }
+                            />
+                          </label>
 
-                <label className="va-field">
-                  <span>Longitude</span>
-                  <input
-                    type="number"
-                    step="0.0001"
-                    value={draft.coordinates[1]}
-                    onChange={(event) =>
-                      setDraft((current) => ({
-                        ...current,
-                        coordinates: [current.coordinates[0], Number(event.target.value)],
-                      }))
-                    }
-                  />
-                </label>
+                          <label className="va-slider">
+                            <span>Spin speed</span>
+                            <strong>{Number(draft.autoRotateSpeed).toFixed(1)}</strong>
+                            <input
+                              type="range"
+                              min="0"
+                              max="10"
+                              step="0.5"
+                              value={draft.autoRotateSpeed}
+                              onChange={(event) =>
+                                setDraft((current) => ({ ...current, autoRotateSpeed: Number(event.target.value) }))
+                              }
+                            />
+                          </label>
 
-                <label className="va-field">
-                  <span>Model</span>
-                  <select
-                    value={draft.modelPath}
-                    onChange={(event) => setDraft((current) => ({ ...current, modelPath: event.target.value }))}
-                  >
-                    <option value="">Choose from library</option>
-                    {availableModels.map((model) => (
-                      <option key={model} value={model}>
-                        {model.replace('/models/', '')}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                          <label className="va-slider">
+                            <span>Scale</span>
+                            <strong>{Number(draft.scale).toFixed(2)}x</strong>
+                            <input
+                              type="range"
+                              min="0.1"
+                              max="5"
+                              step="0.05"
+                              value={draft.scale}
+                              onChange={(event) =>
+                                setDraft((current) => ({ ...current, scale: Number(event.target.value) }))
+                              }
+                            />
+                          </label>
 
-                <div className="va-upload-shell">
-                  <span>Upload</span>
-                  <button
-                    type="button"
-                    className="va-upload-button"
-                    onClick={() => uploadInputRef.current?.click()}
-                  >
-                    <FaCloudUploadAlt />
-                    <span>Choose model file</span>
-                  </button>
-                  <input
-                    ref={uploadInputRef}
-                    type="file"
-                    accept=".glb,.gltf"
-                    onChange={handleFileUpload}
-                    className="va-hidden-file"
-                  />
-                </div>
-              </div>
+                          <label className="va-slider">
+                            <span>Camera distance</span>
+                            <strong>{Number(draft.cameraDistance).toFixed(1)}x</strong>
+                            <input
+                              type="range"
+                              min="0.5"
+                              max="4"
+                              step="0.1"
+                              value={draft.cameraDistance}
+                              onChange={(event) =>
+                                setDraft((current) => ({ ...current, cameraDistance: Number(event.target.value) }))
+                              }
+                            />
+                          </label>
+                        </div>
 
-              <label className="va-field">
-                <span>Description</span>
-                <textarea
-                  rows={3}
-                  value={draft.description}
-                  onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))}
-                  placeholder="Short public description"
-                  required
-                />
-              </label>
+                        <div className="va-origin-grid">
+                          {['X', 'Y', 'Z'].map((axis, index) => (
+                            <label key={axis} className="va-field va-field-compact">
+                              <span>{axis}</span>
+                              <input
+                                type="number"
+                                step="0.05"
+                                value={draft.originOffset[index]}
+                                onChange={(event) =>
+                                  setDraft((current) => {
+                                    const next = [...current.originOffset];
+                                    next[index] = Number(event.target.value);
+                                    return { ...current, originOffset: next };
+                                  })
+                                }
+                              />
+                            </label>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
 
-              <label className="va-field">
-                <span>Travel note</span>
-                <textarea
-                  rows={4}
-                  value={draft.travelNote}
-                  onChange={(event) => setDraft((current) => ({ ...current, travelNote: event.target.value }))}
-                  placeholder="Field note"
-                />
-              </label>
+                  <div className="va-form-actions">
+                    <button
+                      type="button"
+                      className="va-button-primary"
+                      disabled={!draft.modelPath}
+                      onClick={handleAdvanceFromModelStep}
+                    >
+                      <FaArrowRight />
+                      <span>Next: details</span>
+                    </button>
+                    {editMode && (
+                      <button type="button" className="va-button-secondary" onClick={clearDraft}>
+                        Cancel
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
 
-              <div className="va-slider-grid">
-                <label className="va-slider">
-                  <span>Brightness</span>
-                  <strong>{Number(draft.intensity).toFixed(1)}x</strong>
-                  <input
-                    type="range"
-                    min="0.5"
-                    max="4"
-                    step="0.1"
-                    value={draft.intensity}
-                    onChange={(event) =>
-                      setDraft((current) => ({ ...current, intensity: Number(event.target.value) }))
-                    }
-                  />
-                </label>
+              {wizardStep === 1 && (
+                <>
+                  <div className="va-grid-two">
+                    <label className="va-field">
+                      <span>Name</span>
+                      <input
+                        type="text"
+                        value={draft.name}
+                        onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
+                        placeholder="Artifact name"
+                        required
+                      />
+                    </label>
 
-                <label className="va-slider">
-                  <span>Initial angle</span>
-                  <strong>{draft.rotationY}°</strong>
-                  <input
-                    type="range"
-                    min="0"
-                    max="360"
-                    step="1"
-                    value={draft.rotationY}
-                    onChange={(event) =>
-                      setDraft((current) => ({ ...current, rotationY: Number(event.target.value) }))
-                    }
-                  />
-                </label>
+                    <label className="va-field">
+                      <span>Date</span>
+                      <input
+                        type="text"
+                        value={draft.date}
+                        onChange={(event) => setDraft((current) => ({ ...current, date: event.target.value }))}
+                        placeholder="YYYY-MM"
+                        required
+                      />
+                    </label>
 
-                <label className="va-slider">
-                  <span>Spin speed</span>
-                  <strong>{Number(draft.autoRotateSpeed).toFixed(1)}</strong>
-                  <input
-                    type="range"
-                    min="0"
-                    max="10"
-                    step="0.5"
-                    value={draft.autoRotateSpeed}
-                    onChange={(event) =>
-                      setDraft((current) => ({ ...current, autoRotateSpeed: Number(event.target.value) }))
-                    }
-                  />
-                </label>
-              </div>
+                    <label className="va-field va-field-wide">
+                      <span>Location</span>
+                      <input
+                        type="text"
+                        value={locationSearch}
+                        onChange={(event) => setLocationSearch(event.target.value)}
+                        placeholder="Search city, country"
+                        autoComplete="off"
+                        required
+                      />
+                      {searchResults.length > 0 && (
+                        <div className="va-search-popover">
+                          {searchResults.map((result) => (
+                            <button
+                              key={result.id}
+                              type="button"
+                              className="va-search-item"
+                              onClick={() => handleSelectLocation(result)}
+                            >
+                              <span>{result.name}</span>
+                              <small>Use coordinates</small>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {searchBusy && <div className="va-input-note">Searching locations…</div>}
+                    </label>
 
-              <div className="va-form-actions">
-                <button type="submit" className="va-button-primary">
-                  <FaArrowRight />
-                  <span>{editMode ? 'Update record' : 'Save record'}</span>
-                </button>
-                {editMode && (
-                  <button type="button" className="va-button-secondary" onClick={clearDraft}>
-                    Cancel
-                  </button>
-                )}
-              </div>
+                    <label className="va-field">
+                      <span>Latitude</span>
+                      <input
+                        type="number"
+                        step="0.0001"
+                        value={draft.coordinates[0]}
+                        onChange={(event) =>
+                          setDraft((current) => ({
+                            ...current,
+                            coordinates: [Number(event.target.value), current.coordinates[1]],
+                          }))
+                        }
+                      />
+                    </label>
+
+                    <label className="va-field">
+                      <span>Longitude</span>
+                      <input
+                        type="number"
+                        step="0.0001"
+                        value={draft.coordinates[1]}
+                        onChange={(event) =>
+                          setDraft((current) => ({
+                            ...current,
+                            coordinates: [current.coordinates[0], Number(event.target.value)],
+                          }))
+                        }
+                      />
+                    </label>
+                  </div>
+
+                  <div className="va-form-actions">
+                    <button type="button" className="va-button-secondary" onClick={() => setWizardStep(0)}>
+                      Back
+                    </button>
+                    <button
+                      type="button"
+                      className="va-button-primary"
+                      disabled={!draft.name || !draft.date || !draft.location}
+                      onClick={() => setWizardStep(2)}
+                    >
+                      <FaArrowRight />
+                      <span>Next: note</span>
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {wizardStep === 2 && (
+                <>
+                  <label className="va-field">
+                    <span>Stuff note</span>
+                    <textarea
+                      rows={6}
+                      value={draft.travelNote}
+                      onChange={(event) => setDraft((current) => ({ ...current, travelNote: event.target.value }))}
+                      placeholder="What's the story with this object?"
+                    />
+                  </label>
+
+                  <div className="va-form-actions">
+                    <button type="button" className="va-button-secondary" onClick={() => setWizardStep(1)}>
+                      Back
+                    </button>
+                    <button type="submit" className="va-button-primary" disabled={uploadPhase === 'uploading'}>
+                      {uploadPhase === 'uploading' ? <FaSpinner className="va-spin" /> : <FaCloudUploadAlt />}
+                      <span>{editMode ? 'Update record' : 'Upload to R2 & save'}</span>
+                    </button>
+                  </div>
+                </>
+              )}
             </form>
           </article>
 
@@ -921,16 +1271,13 @@ function AdminPanel() {
                 {collections.map((item, index) => (
                   <article key={item.id || index} className="va-row-card">
                     <div className="va-row-frame">
-                      {item.modelPath ? (
-                        <ModelPreview
-                          modelPath={item.modelPath}
-                          scale={1}
-                          intensity={item.intensity || 1.5}
-                          rotationY={item.rotationY || 0}
-                          autoRotateSpeed={item.autoRotateSpeed || 2}
-                          adjustCamera={1.8}
-                          fov={50}
-                        />
+                      {item.thumbnail ? (
+                        // Static image, not a live Canvas — the inventory list can hold
+                        // many rows, and each Canvas is its own WebGL context. Rendering
+                        // one live 3D preview per row exhausts the browser's context limit
+                        // (that's what broke "choose model file" earlier). Live preview is
+                        // reserved for the single record actually being edited, above.
+                        <img src={item.thumbnail} alt={item.name} className="va-row-thumb" loading="lazy" />
                       ) : (
                         <div className="va-preview-placeholder small">
                           <div className="va-preview-glyph" />
@@ -947,7 +1294,7 @@ function AdminPanel() {
                         <span>{item.location}</span>
                         <span>{item.date}</span>
                       </div>
-                      <p>{formatSnippet(item.description || item.travelNote)}</p>
+                      <p>{formatSnippet(item.travelNote)}</p>
                       <div className="va-row-actions">
                         <button type="button" className="va-mini-button" onClick={() => handleEdit(item)}>
                           <FaPen />
@@ -1367,13 +1714,69 @@ const adminStyles = `
     flex-wrap: wrap;
   }
 
-  .va-preview-frame {
-    width: 176px;
+  .va-model-reveal {
+    /* height/opacity are driven by GSAP once a model is chosen (see the
+       reveal effect) — this is just the resting/no-JS/reduced-motion state. */
+    margin-bottom: 18px;
+  }
+
+  .va-preview-stage {
+    /* Fixed, not user-resizable — the native CSS resize handle turned out
+       to size .va-preview-stage and .va-preview-frame independently in
+       Safari (that's what broke the controls layer's position). Fits the
+       parent column's full width instead of a small capped box floating
+       with a big empty gutter beside it. .va-preview-frame and
+       .va-preview-controls both fill 100% of this, so they can never
+       drift apart. */
+    position: relative;
+    width: 100%;
     aspect-ratio: 1;
+    margin: 0 0 18px;
+  }
+
+  .va-preview-frame {
+    width: 100%;
+    height: 100%;
     border: 1px solid rgba(17, 17, 17, 0.08);
     background: #f1efe8;
-    overflow: hidden;
-    flex: 0 0 auto;
+  }
+
+  /* Controls layer: sits on top of .va-preview-frame but is a separate
+     container from it, not a child — see the comment at the call site.
+     pointer-events:none on the layer itself so it doesn't block the resize
+     handle or anything else in .va-preview-frame; individual controls opt
+     back in. */
+  .va-preview-controls {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    pointer-events: none;
+  }
+
+  .va-preview-controls > * {
+    pointer-events: auto;
+  }
+
+  .va-origin-reset {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: transparent;
+    border: 0;
+    padding: 4px 2px;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    font-size: 10px;
+    color: rgba(17, 17, 17, 0.46);
+    font-family: "SFMono-Regular", ui-monospace, Menlo, Monaco, Consolas, monospace;
+    transition: color 180ms ease;
+  }
+
+  .va-origin-reset:hover {
+    color: rgba(17, 17, 17, 0.85);
   }
 
   .va-preview-placeholder,
@@ -1394,6 +1797,113 @@ const adminStyles = `
     width: 54px;
     height: 54px;
     border: 1px solid rgba(17, 17, 17, 0.2);
+  }
+
+  .va-lock-screen {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    display: grid;
+    place-items: center;
+    background: rgba(17, 17, 17, 0.32);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    padding: 24px;
+  }
+
+  .va-lock-card {
+    width: min(380px, 100%);
+    background: #f7f6f2;
+    border: 1px solid rgba(17, 17, 17, 0.1);
+    box-shadow: 0 24px 80px rgba(17, 17, 17, 0.28);
+    padding: 32px 28px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 10px;
+  }
+
+  .va-lock-icon {
+    font-size: 26px;
+    color: rgba(17, 17, 17, 0.6);
+    margin-bottom: 6px;
+  }
+
+  .va-lock-icon-ok {
+    color: #2e7d4f;
+  }
+
+  .va-lock-icon-err {
+    color: #b3432b;
+  }
+
+  .va-lock-title {
+    margin: 0;
+    font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    font-size: 20px;
+  }
+
+  .va-lock-body {
+    margin: 0;
+    color: rgba(17, 17, 17, 0.6);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  .va-lock-reassure {
+    color: rgba(17, 17, 17, 0.42);
+  }
+
+  .va-wizard-steps {
+    display: flex;
+    gap: 8px;
+    margin: 18px 0 4px;
+  }
+
+  .va-wizard-step {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border: 1px solid rgba(17, 17, 17, 0.1);
+    color: rgba(17, 17, 17, 0.4);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+  }
+
+  .va-wizard-step span:first-child {
+    font-family: "SFMono-Regular", ui-monospace, Menlo, Monaco, Consolas, monospace;
+  }
+
+  .va-wizard-step.is-active {
+    border-color: rgba(17, 17, 17, 0.4);
+    color: #111111;
+    background: rgba(255, 255, 255, 0.6);
+  }
+
+  .va-wizard-step.is-done {
+    color: rgba(17, 17, 17, 0.6);
+  }
+
+  .va-origin-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+
+
+  .va-field-compact input {
+    min-height: 40px;
+  }
+
+  .va-row-thumb {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
   }
 
   .va-summary-strip {
