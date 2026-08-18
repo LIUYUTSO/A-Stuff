@@ -34,6 +34,10 @@ sf3d/
 # vercel
 .vercel
 
+# local dev server helper artifacts
+dev-server.log
+dev-server.pid
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

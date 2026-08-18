@@ -1,10 +1,10 @@
 #!/bin/bash
 
-# VOYAGE ARTIFACTS - Local Sync Helper
+# A-STUFF - Local Sync Helper
 # This script pulls the latest 3D models and data from GitHub to your local desktop.
 
 echo "-----------------------------------------------"
-echo "🌀 VOYAGE: Synchronizing with Cloud Archive..."
+echo "🌀 A-STUFF: Synchronizing with Cloud Archive..."
 echo "-----------------------------------------------"
 
 # Ensure we are in the correct directory

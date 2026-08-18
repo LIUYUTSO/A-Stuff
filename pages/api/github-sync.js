@@ -21,7 +21,7 @@ export default async function handler(req, res) {
     const { content, path, message, isBinary } = req.body;
     const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
     const REPO_OWNER = process.env.GITHUB_REPO_OWNER || 'LIUYUTSO';
-    const REPO_NAME = process.env.GITHUB_REPO_NAME || 'VOYAGE-ARTIFACTS';
+    const REPO_NAME = process.env.GITHUB_REPO_NAME || 'A-Stuff';
 
     if (!GITHUB_TOKEN) {
         return res.status(500).json({
@@ -75,7 +75,7 @@ export default async function handler(req, res) {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    message: message || 'CMS Update: Automatic push from Voyage artifacts',
+                    message: message || 'CMS Update: Automatic push from A-Stuff artifacts',
                     content: bodyContent,
                     sha: sha, // Include SHA if updating
                     branch: 'main',

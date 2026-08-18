@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Voyage 3D Model Compressor
+# A-Stuff 3D Model Compressor
 # Usage: ./scripts/compress.sh <filename.glb>
 
 FILE=$1
@@ -16,7 +16,7 @@ if [ ! -f "$FILE" ]; then
     exit 1
 fi
 
-echo "--- VOYAGE ASSET OPTIMIZER ---"
+echo "--- A-STUFF ASSET OPTIMIZER ---"
 echo "Target: $FILE"
 echo "Original size: $(du -h "$FILE" | cut -f1)"
 
