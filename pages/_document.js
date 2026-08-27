@@ -5,12 +5,16 @@ export default function Document() {
     <Html lang="en">
       <Head>
         <meta charSet="utf-8" />
-        <meta name="theme-color" content="#f7f6f2" />
-        <meta name="color-scheme" content="light" />
+        <meta name="color-scheme" content="light dark" />
+        <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+        <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
+
+        <link rel="preconnect" href="https://cdn.adamliu.uk" crossOrigin="anonymous" />
+        <link rel="preconnect" href="https://a.basemaps.cartocdn.com" crossOrigin="anonymous" />
 
         <meta
           name="description"
-          content="A-Stuff is a quiet archive of personal objects, presented as an interactive map and minimal admin workspace."
+          content="A-Stuff is an archive of scanned objects, each one pinned to the coordinate where it was picked up."
         />
         <meta
           name="keywords"
@@ -20,7 +24,7 @@ export default function Document() {
         <meta property="og:title" content="A-Stuff" />
         <meta
           property="og:description"
-          content="A quiet archive of travel objects, with a calm map-led public page and a matching admin workspace."
+          content="An archive of scanned objects, each one pinned to the coordinate where it was picked up."
         />
         <meta property="og:type" content="website" />
         <meta property="og:url" content="https://a-stuff.vercel.app" />
@@ -30,7 +34,7 @@ export default function Document() {
         <meta name="twitter:title" content="A-Stuff" />
         <meta
           name="twitter:description"
-          content="A quiet archive of travel objects, presented as an interactive map and minimal admin workspace."
+          content="An archive of scanned objects, each one pinned to the coordinate where it was picked up."
         />
         <meta name="twitter:image" content="/og-image.jpg" />
 

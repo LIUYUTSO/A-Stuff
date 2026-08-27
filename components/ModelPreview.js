@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useMemo, memo, Component } from 'react';
 import { Canvas } from '@react-three/fiber';
-import { OrbitControls, PresentationControls, useGLTF, Stage } from '@react-three/drei';
+import { Html, OrbitControls, PresentationControls, useGLTF, Stage, useProgress } from '@react-three/drei';
 import { Suspense } from 'react';
 
 // Error Boundary for Three.js Canvas
@@ -17,21 +17,64 @@ class ModelErrorBoundary extends Component {
   }
   render() {
     if (this.state.hasError) {
+      // Mode E error state: type only. No frame, no tinted plate, no icon.
       return (
-        <div className="h-full flex flex-col items-center justify-center bg-[#f1efe8] border border-black/10 p-6 text-center">
-          <div className="w-12 h-12 mb-4 border border-black/20" />
-          <h4 className="text-[10px] font-medium uppercase tracking-[0.18em] text-black/75 mb-2">Preview unavailable</h4>
-          <p className="text-[10px] text-black/50 leading-relaxed max-w-[180px]">
-            The model could not be loaded.
-            <br />
-            The archive record is still available.
-          </p>
+        <div className="va-stage-error" role="alert">
+          <p>[Error] — mesh did not load.</p>
+          <p>The written record is still readable.</p>
+          <style jsx>{`
+            .va-stage-error {
+              width: 100%;
+              height: 100%;
+              display: flex;
+              flex-direction: column;
+              justify-content: center;
+              gap: 8px;
+              padding: var(--e-pad);
+              color: var(--e-ink);
+              font-family: var(--font-e);
+              font-size: 11px;
+              font-weight: 300;
+              letter-spacing: var(--e-track);
+              line-height: 1.6;
+              text-transform: uppercase;
+            }
+
+            .va-stage-error p {
+              margin: 0;
+              max-width: 26ch;
+            }
+          `}</style>
         </div>
       );
     }
     return this.props.children;
   }
 }
+
+// Mode E loading state: a percentage in type, drawn inside the canvas so the
+// stage never sits blank while a GLB is on the wire.
+const StageLoader = () => {
+  const { progress } = useProgress();
+
+  return (
+    <Html center>
+      <span className="va-stage-loading">[Loading mesh] — {Math.round(progress)}%</span>
+      <style jsx>{`
+        .va-stage-loading {
+          display: block;
+          white-space: nowrap;
+          color: var(--e-ink);
+          font-family: var(--font-e);
+          font-size: 11px;
+          font-weight: 300;
+          letter-spacing: var(--e-track);
+          text-transform: uppercase;
+        }
+      `}</style>
+    </Html>
+  );
+};
 
 // Global cache object
 const modelCache = {};
@@ -96,11 +139,11 @@ const ModelPreview = memo(({
         <spotLight position={[10, 10, 10]} angle={0.18} penumbra={1} castShadow />
         <pointLight position={[-10, -10, -10]} intensity={intensity * 0.85} />
 
-        <Suspense fallback={null}>
+        <Suspense fallback={<StageLoader />}>
           <Stage
             environment="city"
             intensity={0.6}
-            contactShadow={{ opacity: 0.2, blur: 2 }}
+            contactShadow={false}
             adjustCamera={cameraDistance ?? adjustCamera}
           >
             <PresentationControls
