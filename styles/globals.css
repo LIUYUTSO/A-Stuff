@@ -1,40 +1,81 @@
 @import "tailwindcss";
 
+/* ─────────────────────────────────────────────────────────────
+   MODE E · REDUCTIONIST MONO
+   Ink and ground only. Zero radius, zero shadow, zero accent,
+   zero max-width. Colour declared in oklch, hex kept as comment.
+   ───────────────────────────────────────────────────────────── */
+
 :root {
+  --e-ink: oklch(0 0 0);        /* #000000 */
+  --e-ground: oklch(1 0 0);     /* #FFFFFF */
+
+  /* Whitespace is the only spacing device — 24 / 40 / 72. */
+  --e-pad: 24px;
+  --e-gap: 4px;
+  --e-track: 0.12em;
+
+  --font-e: var(--font-mono-loaded, "Letter Gothic", "Courier New", monospace);
+
+  /* Legacy admin workspace tokens — that page owns its own ground. */
   --background: #f7f6f2;
   --foreground: #111111;
   --font-geist-sans: "Helvetica Neue", Helvetica, Arial, sans-serif;
   --font-geist-mono: "SFMono-Regular", ui-monospace, Menlo, Monaco, Consolas, monospace;
 }
 
+@media (min-width: 768px) {
+  :root { --e-pad: 40px; }
+}
+
+@media (min-width: 1200px) {
+  :root { --e-pad: 72px; }
+}
+
+/* Dark is a straight inversion — never a second palette. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --e-ink: oklch(1 0 0);      /* #FFFFFF */
+    --e-ground: oklch(0 0 0);   /* #000000 */
+  }
+}
+
 @theme inline {
+  --color-ink: var(--e-ink);
+  --color-ground: var(--e-ground);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --font-mono: var(--font-e);
   --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans);
-  color-scheme: light;
+}
+
+/* Mode E allows opacity only; strip everything for reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 @layer utilities {
   .ease-bounce {
     transition-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1);
   }
-}
 
-/* 添加新的動畫曲線 */
-@layer utilities {
   .ease-custom {
     transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1.2);
   }
-}
 
-@layer utilities {
   .ease-float {
     transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
   }

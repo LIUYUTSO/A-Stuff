@@ -1,250 +1,184 @@
 import { useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
-import { FaTimes } from 'react-icons/fa';
 
 const ModelPreview = dynamic(() => import('./ModelPreview'), { ssr: false });
 
+const formatCoordinates = (coordinates) =>
+  Array.isArray(coordinates) && coordinates.length === 2
+    ? `${Number(coordinates[0]).toFixed(6)}, ${Number(coordinates[1]).toFixed(6)}`
+    : '—';
+
 export default function ModelPopup({ selectedLocation, isClosing, onClose }) {
-  const popupRef = useRef(null);
+  const closeRef = useRef(null);
 
   useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (popupRef.current && !popupRef.current.contains(event.target)) {
-        onClose();
-      }
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') onClose();
     };
 
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', onKeyDown);
+
+    // The record takes the whole viewport; leaving the page scrollable behind
+    // it lets the archive drift under a fixed layer that never moves.
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    closeRef.current?.focus();
+
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
   }, [onClose]);
 
   if (!selectedLocation) return null;
 
   return (
-    <div className={`va-popup-shell ${isClosing ? 'is-closing' : ''}`}>
-      <div className="va-popup-backdrop" onClick={onClose} />
+    <div
+      className={`va-record ${isClosing ? 'is-closing' : ''}`}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Record — ${selectedLocation.name}`}
+    >
+      <button type="button" ref={closeRef} className="va-record-close" onClick={onClose}>
+        [Close]
+      </button>
 
-      <div ref={popupRef} className="va-popup-panel" role="dialog" aria-modal="true">
-        <button className="va-popup-close" onClick={onClose} aria-label="Close record">
-          <FaTimes size={14} />
-        </button>
-
-        <div className="va-popup-media">
-          <div className="va-popup-stage">
-            <ModelPreview
-              modelPath={selectedLocation.highModelPath || selectedLocation.modelPath}
-              scale={selectedLocation.scale || 1}
-              intensity={selectedLocation.intensity || 1.5}
-              rotationY={selectedLocation.rotationY || 0}
-              autoRotateSpeed={selectedLocation.autoRotateSpeed || 2}
-              cameraDistance={selectedLocation.cameraDistance || 1.8}
-              position={selectedLocation.originOffset || [0, 0, 0]}
-            />
-          </div>
-        </div>
-
-        <div className="va-popup-content">
-          <div className="va-popup-meta">
-            <span>{selectedLocation.location}</span>
-            <span>{selectedLocation.date}</span>
-          </div>
-
-          <h3>{selectedLocation.name}</h3>
-
-          <p className="va-popup-body">
-            {selectedLocation.travelNote || 'No note recorded.'}
-          </p>
-
-          <div className="va-popup-footer">
-            <span className="va-popup-status">Minimal record</span>
-            <button className="va-popup-button" onClick={onClose}>
-              Close
-            </button>
-          </div>
-        </div>
+      <div className="va-record-stage">
+        <ModelPreview
+          modelPath={selectedLocation.highModelPath || selectedLocation.modelPath}
+          scale={selectedLocation.scale || 1}
+          intensity={selectedLocation.intensity || 1.5}
+          rotationY={selectedLocation.rotationY || 0}
+          autoRotateSpeed={selectedLocation.autoRotateSpeed || 0}
+          cameraDistance={selectedLocation.cameraDistance || 1.8}
+          position={selectedLocation.originOffset || [0, 0, 0]}
+        />
       </div>
 
-      <style jsx>{`
-        .va-popup-shell {
+      <div className="va-record-text">
+        <p className="va-record-meta">
+          {selectedLocation.location || 'Unplaced'} — {selectedLocation.date || 'Undated'}
+        </p>
+
+        <h2 className="va-record-title">{selectedLocation.name}</h2>
+
+        <p className="va-record-note">{selectedLocation.travelNote || 'No note recorded.'}</p>
+
+        <dl className="va-record-spec">
+          <dt>Coordinates</dt>
+          <dd>{formatCoordinates(selectedLocation.coordinates)}</dd>
+          <dt>Mesh</dt>
+          <dd>{selectedLocation.highModelPath ? 'High + low poly' : 'Single poly'}</dd>
+        </dl>
+      </div>
+
+      <style jsx global>{`
+        /* Mode E record view: no panel, no backdrop blur, no shadow. The page
+           is simply replaced by the object until [CLOSE]. */
+        .va-record {
           position: fixed;
           inset: 0;
-          z-index: 1000;
+          z-index: 5000;
           display: grid;
-          place-items: center;
-          padding: 18px;
+          grid-template-rows: minmax(0, 1fr) auto;
+          background: var(--e-ground);
+          color: var(--e-ink);
+          opacity: 1;
+          transition: opacity 200ms linear;
         }
 
-        .va-popup-shell.is-closing {
+        .va-record.is-closing {
+          opacity: 0;
           pointer-events: none;
         }
 
-        .va-popup-backdrop {
+        .va-record-close {
           position: absolute;
-          inset: 0;
-          background: rgba(17, 17, 17, 0.58);
-          backdrop-filter: blur(14px);
-          -webkit-backdrop-filter: blur(14px);
-        }
-
-        .va-popup-panel {
-          position: relative;
-          width: min(1120px, 100%);
-          max-height: min(88vh, 920px);
-          overflow: hidden;
-          display: grid;
-          grid-template-columns: minmax(0, 1.1fr) minmax(300px, 0.9fr);
-          background: #f7f6f2;
-          border: 1px solid rgba(17, 17, 17, 0.1);
-          box-shadow: 0 24px 80px rgba(17, 17, 17, 0.18);
-          transition: transform 260ms ease, opacity 260ms ease;
-        }
-
-        .va-popup-shell.is-closing .va-popup-panel {
-          opacity: 0;
-          transform: scale(0.985) translateY(10px);
-        }
-
-        .va-popup-close {
-          position: absolute;
-          top: 16px;
-          right: 16px;
-          z-index: 3;
-          width: 36px;
-          height: 36px;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          border: 1px solid rgba(17, 17, 17, 0.12);
-          background: rgba(247, 246, 242, 0.92);
-          color: #111111;
-          transition: border-color 180ms ease, transform 180ms ease;
-        }
-
-        .va-popup-close:hover {
-          border-color: rgba(17, 17, 17, 0.28);
-          transform: translateY(-1px);
-        }
-
-        .va-popup-media {
-          min-height: 0;
-          border-right: 1px solid rgba(17, 17, 17, 0.08);
-          background: #f1efe8;
-          padding: 24px;
-        }
-
-        .va-popup-stage {
-          width: 100%;
-          height: 100%;
-          min-height: 0;
-          border: 1px solid rgba(17, 17, 17, 0.08);
-          background: rgba(255, 255, 255, 0.24);
-        }
-
-        .va-popup-content {
-          display: flex;
-          flex-direction: column;
-          padding: 28px;
-        }
-
-        .va-popup-meta,
-        .va-popup-status {
-          text-transform: uppercase;
-          letter-spacing: 0.14em;
-          font-size: 10px;
-          font-family: "SFMono-Regular", ui-monospace, Menlo, Monaco, Consolas, monospace;
-        }
-
-        .va-popup-meta {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 12px;
-          color: rgba(17, 17, 17, 0.48);
-          margin-bottom: 16px;
-        }
-
-        .va-popup-meta span {
-          padding-right: 12px;
-          border-right: 1px solid rgba(17, 17, 17, 0.12);
-        }
-
-        .va-popup-meta span:last-child {
-          padding-right: 0;
-          border-right: 0;
-        }
-
-        .va-popup-content h3 {
+          top: var(--e-pad);
+          right: var(--e-pad);
+          z-index: 2;
+          appearance: none;
           margin: 0;
-          font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
-          font-size: clamp(34px, 4.4vw, 64px);
-          line-height: 0.96;
-          letter-spacing: -0.05em;
-          font-weight: 400;
-          text-wrap: balance;
+          padding: 0;
+          border: 0;
+          background: none;
+          color: inherit;
+          font: inherit;
+          font-size: 11px;
+          letter-spacing: var(--e-track);
+          text-transform: uppercase;
+          cursor: pointer;
         }
 
-        .va-popup-body {
-          margin: 22px 0 0;
-          max-width: 42ch;
-          color: rgba(17, 17, 17, 0.72);
-          font-size: 15px;
-          line-height: 1.95;
-          font-family: "SFMono-Regular", ui-monospace, Menlo, Monaco, Consolas, monospace;
+        .va-record-close:hover {
+          text-decoration: underline;
         }
 
-        .va-popup-footer {
-          margin-top: auto;
-          padding-top: 24px;
-          border-top: 1px solid rgba(17, 17, 17, 0.08);
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          gap: 18px;
+        .va-record-close:focus-visible {
+          outline: 2px solid var(--e-ink);
         }
 
-        .va-popup-status {
-          color: rgba(17, 17, 17, 0.5);
+        .va-record-stage {
+          position: relative;
+          min-height: 0;
+          min-width: 0;
         }
 
-        .va-popup-button {
-          min-height: 40px;
-          padding: 0 16px;
-          border: 1px solid rgba(17, 17, 17, 0.16);
-          background: #111111;
-          color: #f7f6f2;
-          transition: transform 180ms ease, border-color 180ms ease;
+        .va-record-text {
+          padding: 0 var(--e-pad) var(--e-pad);
+          overflow-y: auto;
+          max-height: 46dvh;
         }
 
-        .va-popup-button:hover {
-          transform: translateY(-1px);
-          border-color: rgba(17, 17, 17, 0.3);
+        .va-record-meta,
+        .va-record-note,
+        .va-record-spec {
+          font-size: 11px;
+          letter-spacing: var(--e-track);
+          line-height: 1.6;
         }
 
-        @media (max-width: 960px) {
-          .va-popup-panel {
-            grid-template-columns: 1fr;
-            max-height: 92vh;
+        .va-record-meta {
+          margin: 0;
+        }
+
+        .va-record-title {
+          margin: 12px 0 0;
+          font-size: clamp(14px, 1.2vw, 18px);
+          font-weight: 300;
+          line-height: 1.2;
+          letter-spacing: var(--e-track);
+        }
+
+        .va-record-note {
+          margin: 20px 0 0;
+          max-width: 52ch;
+          white-space: pre-line;
+        }
+
+        .va-record-spec {
+          display: grid;
+          grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+          gap: 4px 16px;
+          margin: 28px 0 0;
+        }
+
+        .va-record-spec dd {
+          margin: 0;
+        }
+
+        @media (min-width: 900px) {
+          .va-record {
+            grid-template-rows: none;
+            grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.6fr);
           }
 
-          .va-popup-media {
-            border-right: 0;
-            border-bottom: 1px solid rgba(17, 17, 17, 0.08);
-            min-height: 42vh;
-          }
-        }
-
-        @media (max-width: 640px) {
-          .va-popup-shell {
-            padding: 10px;
-          }
-
-          .va-popup-content,
-          .va-popup-media {
-            padding: 18px;
-          }
-
-          .va-popup-footer {
+          .va-record-text {
+            display: flex;
             flex-direction: column;
-            align-items: flex-start;
+            justify-content: flex-end;
+            max-height: none;
+            padding: calc(var(--e-pad) * 2) var(--e-pad) var(--e-pad) 0;
           }
         }
       `}</style>
